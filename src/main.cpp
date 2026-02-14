@@ -5,6 +5,7 @@
   * Pretty colors and animations
   * 
   * Once thermistor and 10k resistor is wired up, open a browser and type "beer.local"
+  * Ensure you're on the same wifi network as the ESP32 (only supports 2.4GHz wifi band)
 ==========================================================================================*/
 
 #include <Arduino.h>
@@ -202,4 +203,5 @@ void loop()
   }
 
   // No delay() here! The ESP32 is free to handle web requests instantly.
+
 }

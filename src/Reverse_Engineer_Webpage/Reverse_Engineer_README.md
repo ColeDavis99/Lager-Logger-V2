@@ -57,8 +57,6 @@ const uint8_t DASH_HTML[SIZE_FROM_STEP_2] PROGMEM = {
 
 Because the command adds a comma to the end of every line, your very last number will have a trailing comma (e.g., `..., 105,` followed by `};`).
 
----
-
 ## Action
 
 Delete that last comma right before the `};` to keep the compiler happy.

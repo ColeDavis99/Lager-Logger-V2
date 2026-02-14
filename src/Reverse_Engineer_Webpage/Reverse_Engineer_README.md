@@ -1,6 +1,6 @@
 # Convert `dashboard.html` to a Clean Comma-Separated Decimal Block  
 ### Using the `awk` / `sed` Method (Git Bash Terminal Commands)
-
+Only do these steps if you need to edit the html, css, or js of the webpage. These steps compress the dashboard.html file and output a comma-seperated decimal block to save flash memory on the ESP32 and reduce boot-up time when first serving the webpage.
 Here are the three steps to go from `dashboard.html` to a clean, comma-separated decimal block with line breaks, using the `awk` / `sed` method to ensure your formatting is C++ ready.
 
 ---

@@ -80,9 +80,9 @@ unsigned long lastSampleTime = 0;         // For spacing out temp readings for t
 int sampleCtr = 0;                        // The number of temperature samples the next bar of barTemp chart has had done
 
 /* --- Temperature Averaging Variables --- */
-float runningT_sum = 0.0;                   // Sum of the ongoing average's temp readings so far
-long updateCtr = 0;                // # of average readings have been calculated (when to begin scrolling the barTemp chart instead of appending)
-float currentT = 0.0;                       // Stores the latest calculated average
+float runningT_sum = 0.0;                 // Sum of the ongoing average's temp readings so far
+long updateCtr = 0;                       // # of average readings have been calculated (when to begin scrolling the barTemp chart instead of appending)
+float currentT = 0.0;                     // Stores the latest calculated average
 
 
 /* --- Temperature Calculation --- */
@@ -97,6 +97,17 @@ float CalcTemp(int Vo_val)
   T_far = ((T_far + 5.2399) / 1.1622);
 
   return T_far;
+}
+
+void AppendReading(dash::BarChart<const char *, float> &barChart, char labels[][12], const char *xAxis[], float yAxis[], int index, char whichChart)
+{
+  ltoa(updateCtr, labels[index], 10);
+  xAxis[index] = labels[index];
+  if(whichChart=='A'){yAxis[index] = currentT;}
+  else if(whichChart=='S'){yAxis[index] = currentT - avgYAxis[index - (updateCtr > 1)];} // Can't have a swing temp with only 1 reading.
+
+  barChart.setX(xAxis, updateCtr);
+  barChart.setY(yAxis, updateCtr);
 }
 
 void setup()
@@ -146,7 +157,6 @@ void loop()
     runningT_sum += CalcTemp(Vo);
     sampleCtr++;
     cardLiveTemperature.setValue(runningT_sum / sampleCtr);
-    
     lastSampleTime = currentMillis;
 
     // --- STEP 2: Process Average & Update Charts ---
@@ -168,18 +178,8 @@ void loop()
       {
         // Avg Chart fine grain
         int index = updateCtr - 1;
-        ltoa(updateCtr, avgLabels[index], 10);
-        avgXAxis[index] = avgLabels[index];
-        avgYAxis[index] = currentT;
-        barTemp.setX(avgXAxis, updateCtr);
-        barTemp.setY(avgYAxis, updateCtr);
-
-        // Swing Chart fine grain
-        ltoa(updateCtr, swingLabels[index], 10);
-        swingXAxis[index] = swingLabels[index];
-        swingYAxis[index] = currentT-avgYAxis[index - (updateCtr>1)]; //Can't have a swing temp with only 1 reading.
-        barSwing.setX(swingXAxis, updateCtr);
-        barSwing.setY(swingYAxis, updateCtr);
+        AppendReading(barTemp, avgLabels, avgXAxis, avgYAxis, index, 'A');        // A=average, temp average chart being passed in
+        AppendReading(barSwing, swingLabels, swingXAxis, swingYAxis, index, 'S'); // S=swing, temp swing chart being passed in
       }
 
       // Update fine grain charts (Shift data left)
@@ -226,14 +226,13 @@ void loop()
         // Calculate the hourly average
         float hourTempSum = 0.0;
         if(updateCtr > MAX_POINTS){
-          for(int i=MAX_POINTS-1; i>=MAX_POINTS-AVERAGES_PER_HOUR; i--){hourTempSum += avgYAxis[i];}
-        }
+          for(int i=MAX_POINTS-1; i>=MAX_POINTS-AVERAGES_PER_HOUR; i--){hourTempSum += avgYAxis[i];}}
         else{
-          for (int i=((updateCtr-1) % MAX_POINTS); i>((updateCtr - 1) % MAX_POINTS)-AVERAGES_PER_HOUR; i--){hourTempSum += avgYAxis[i];}
-        }
+          for (int i=((updateCtr-1) % MAX_POINTS); i>((updateCtr - 1) % MAX_POINTS)-AVERAGES_PER_HOUR; i--){hourTempSum += avgYAxis[i];}}
         avgYAxisAll[index] = hourTempSum/AVERAGES_PER_HOUR;
         barTempAll.setX(avgXAxisAll, hoursElapsed);
         barTempAll.setY(avgYAxisAll, hoursElapsed);
+        
         // Swing Chart all-time
         ltoa(hoursElapsed, swingLabelsAll[index], 10);
         swingXAxisAll[index] = swingLabelsAll[index];

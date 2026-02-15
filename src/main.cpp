@@ -110,6 +110,12 @@ void AppendReading(dash::BarChart<const char *, float> &barChart, char labels[][
   barChart.setY(yAxis, updateCtr);
 }
 
+void ShiftReading(char labels[][12], const char *xAxis[], float yAxis[], int index){
+  strcpy(labels[index], labels[index+1]);
+  yAxis[index] = yAxis[index+1];
+  xAxis[index] = labels[index];
+}
+
 void setup()
 {
   Serial.begin(9600);
@@ -167,12 +173,12 @@ void loop()
       // Reset for next batch
       runningT_sum = 0;
       sampleCtr = 0;
+      updateCtr++;
 
       // Update Cards
       cardLiveTemperature.setValue(currentT);
       cardLastAverageTemp.setValue(currentT);
 
-      updateCtr++;
       // Update fine grain charts (Rolling Buffer Logic)
       if (updateCtr <= MAX_POINTS)
       {
@@ -187,15 +193,8 @@ void loop()
       {
         for (int i = 0; i < MAX_POINTS - 1; i++)
         {
-          // Avg chart fine grain
-          strcpy(avgLabels[i], avgLabels[i+1]);
-          avgYAxis[i] = avgYAxis[i+1];
-          avgXAxis[i] = avgLabels[i];
-
-          // Swing chart fine grain
-          strcpy(swingLabels[i], swingLabels[i+1]);
-          swingYAxis[i] = swingYAxis[i+1];
-          swingXAxis[i] = avgLabels[i];
+          ShiftReading(avgLabels, avgXAxis, avgYAxis, i);       // Avg chart fine grain
+          ShiftReading(swingLabels, swingXAxis, swingYAxis, i); // Swing chart fine grain
         }
         // Add new data to end
         // Avg chart fine grain

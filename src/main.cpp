@@ -47,7 +47,7 @@ const long MAX_POINTS = 180;                                                    
 
 const long AVERAGES_PER_HOUR = 3600000/TOT_TEMP_SAMPLE_RANGE;                   // How many finished averages will there be in one hour (3,600,000 ms in an hour)
 const unsigned int TIMESPAN = 24 * 42;                                          // How many hours of data to show in the ALL charts (24 hours times 42 days) Beginning to run into RAM limits
-const bool WRITE_TO_CSV = false;                                                // Enable/disable .csv writes
+const bool WRITE_TO_CSV = true;                                                // Enable/disable .csv writes
 const bool DELETE_CSV = false;                                                  // Enable/disable deletion of the .csv file listed in FILENAME var
 const char *FILENAME = "/hourly.csv";
 
@@ -278,14 +278,12 @@ void loop()
             Serial.println("Logged hourly temp to CSV");
           }
           else{Serial.println("Failed to open CSV for appending");}
-
         }
-
+      }
       Serial.print("Avg Temp: ");
       Serial.println(currentT);
     }
   }
 
   // No delay() here! The ESP32 is free to handle web requests instantly.
-
 }

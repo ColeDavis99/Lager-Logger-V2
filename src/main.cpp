@@ -9,16 +9,17 @@
 ==========================================================================================*/
 
 #include <Arduino.h>
-#include <ArduinoOTA.h> //For Over-The-Air programming (OTA)
+// #include <ArduinoOTA.h> //For Over-The-Air programming (eventually)
 #include <WiFi.h>
 #include <AsyncTCP.h>
 #include <ESPAsyncWebServer.h>
-#include <ESPDash.h>
-#include <ESPmDNS.h>
+#include <ESPDash.h>  // Pretty charts on the local webpage
+#include <ESPmDNS.h>  // Allows for "beer.local" as the IP
+#include <LittleFS.h> // Little File System for storing temp readings in FLASH memory
 
 /* --- WiFi Credentials --- */
 const char *ssid = "";      // SSID
-const char *password = ""; // Password
+const char *password = "";          // Password
 
 /* --- Server & Dashboard Setup --- */
 AsyncWebServer server(80);
@@ -46,6 +47,9 @@ const long MAX_POINTS = 180;                                                    
 
 const long AVERAGES_PER_HOUR = 3600000/TOT_TEMP_SAMPLE_RANGE;                   // How many finished averages will there be in one hour (3,600,000 ms in an hour)
 const unsigned int TIMESPAN = 24 * 42;                                          // How many hours of data to show in the ALL charts (24 hours times 42 days) Beginning to run into RAM limits
+const bool WRITE_TO_CSV = false;                                                // Enable/disable .csv writes
+const bool DELETE_CSV = false;                                                  // Enable/disable deletion of the .csv file listed in FILENAME var
+const char *FILENAME = "/hourly.csv";
 
 /* --- Storage of Average Temp Readings --- */
 char avgLabels[MAX_POINTS][12];
@@ -129,10 +133,33 @@ void setup()
     Serial.println(WiFi.status());
   }
 
+  delay(10000); // Debugging so I can see serial monitor output
+
   // Init debug prints
   Serial.println("\nIP Address: " + WiFi.localIP().toString());
   if (!MDNS.begin("beer")){Serial.println("Error starting mDNS");}
   else{Serial.println("mDNS started: http://beer.local");}
+  if (!LittleFS.begin(true)){Serial.println("LittleFS Mount Failed");}
+  else{Serial.println("LittleFS mounted");}
+
+  // Init littleFS .csv file if not exists
+  if (!LittleFS.exists(FILENAME))
+  {
+    File file = LittleFS.open(FILENAME, "w");
+    if (file)
+    {
+      file.println("Hour,AverageTempF");
+      file.close();
+      Serial.println("Created hourly.csv");
+    }
+  }
+
+  if(DELETE_CSV){
+    if(LittleFS.remove(FILENAME)){Serial.println("CSV deleted");}
+    else{Serial.println("Delete failed");}
+  }
+
+  server.serveStatic(FILENAME, LittleFS, FILENAME); // Download .csv at http://beer.local/hourly.csv (or 192.168.1.95:8080/hourly.csv, depends on network)
 
   server.begin();
 }
@@ -238,7 +265,21 @@ void loop()
         swingYAxisAll[index] = avgYAxisAll[index] - avgYAxisAll[index - (hoursElapsed > 1)]; // Can't have a swing temp with only 1 reading.
         barSwingAll.setX(swingXAxisAll, hoursElapsed);
         barSwingAll.setY(swingYAxisAll, hoursElapsed);
-      }
+
+        // Append to CSV
+        if(WRITE_TO_CSV){
+          File file = LittleFS.open(FILENAME, "a");
+          if (file)
+          {
+            file.print(hoursElapsed);
+            file.print(",");
+            file.println(avgYAxisAll[index], 3); // 3 decimal places
+            file.close();
+            Serial.println("Logged hourly temp to CSV");
+          }
+          else{Serial.println("Failed to open CSV for appending");}
+
+        }
 
       Serial.print("Avg Temp: ");
       Serial.println(currentT);

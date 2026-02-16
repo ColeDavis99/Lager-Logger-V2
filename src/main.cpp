@@ -48,7 +48,7 @@ const long MAX_POINTS = 180;                                                    
 const long AVERAGES_PER_HOUR = 3600000/TOT_TEMP_SAMPLE_RANGE;                   // How many finished averages will there be in one hour (3,600,000 ms in an hour)
 const unsigned int TIMESPAN = 24 * 42;                                          // How many hours of data to show in the ALL charts (24 hours times 42 days) Beginning to run into RAM limits
 const bool WRITE_TO_CSV = true;                                                // Enable/disable .csv writes
-const bool DELETE_CSV = false;                                                  // Enable/disable deletion of the .csv file listed in FILENAME var
+const bool DELETE_CSV = true;                                                  // Enable/disable deletion of the .csv file listed in FILENAME var
 const char *FILENAME = "/hourly.csv";
 
 /* --- Storage of Average Temp Readings --- */
@@ -239,7 +239,6 @@ void loop()
         barSwing.setY(swingYAxis, MAX_POINTS);
       }
 
-
       // Update all-time temp charts (Only has rolling buffer logic. Stops updating once max is reached.)
       if ((updateCtr % AVERAGES_PER_HOUR) == 0 && (updateCtr / AVERAGES_PER_HOUR) < TIMESPAN)
       {
@@ -258,27 +257,28 @@ void loop()
         avgYAxisAll[index] = hourTempSum/AVERAGES_PER_HOUR;
         barTempAll.setX(avgXAxisAll, hoursElapsed);
         barTempAll.setY(avgYAxisAll, hoursElapsed);
-        
+
+        // Append to CSV
+        if (WRITE_TO_CSV)
+        {
+          File file = LittleFS.open(FILENAME, "a");
+          if (file){
+            file.print(hoursElapsed);
+            file.print(",");
+            file.println(hourTempSum/AVERAGES_PER_HOUR, 3); // 3 decimal places
+            file.close();
+            Serial.println("Logged hourly temp to CSV");
+          }
+          else{
+            Serial.println("Failed to open CSV for appending");}
+        }
+
         // Swing Chart all-time
         ltoa(hoursElapsed, swingLabelsAll[index], 10);
         swingXAxisAll[index] = swingLabelsAll[index];
         swingYAxisAll[index] = avgYAxisAll[index] - avgYAxisAll[index - (hoursElapsed > 1)]; // Can't have a swing temp with only 1 reading.
         barSwingAll.setX(swingXAxisAll, hoursElapsed);
         barSwingAll.setY(swingYAxisAll, hoursElapsed);
-
-        // Append to CSV
-        if(WRITE_TO_CSV){
-          File file = LittleFS.open(FILENAME, "a");
-          if (file)
-          {
-            file.print(hoursElapsed);
-            file.print(",");
-            file.println(avgYAxisAll[index], 3); // 3 decimal places
-            file.close();
-            Serial.println("Logged hourly temp to CSV");
-          }
-          else{Serial.println("Failed to open CSV for appending");}
-        }
       }
       Serial.print("Avg Temp: ");
       Serial.println(currentT);

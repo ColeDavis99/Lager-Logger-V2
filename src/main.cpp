@@ -19,7 +19,7 @@
 
 /* --- WiFi Credentials --- */
 const char *ssid = "";      // SSID
-const char *password = "";          // Password
+const char *password = "";   // Password
 
 /* --- Server & Dashboard Setup --- */
 AsyncWebServer server(80);
@@ -28,22 +28,26 @@ ESPDash dashboard(server);
 dash::SeparatorCard sep1(dashboard, "Live Stats");
 dash::TemperatureCard cardLiveTemperature(dashboard, "Live");
 dash::TemperatureCard cardLastAverageTemp(dashboard, "Last Average");
-dash::GenericCard cardCounttown(dashboard, "Countdown");
+dash::GenericCard cardCounttown(dashboard, "Average Countdown");
 
 dash::SeparatorCard sep2(dashboard, "Last 3 Hours");
-dash::BarChart<const char *, float> barTemp(dashboard, "Temp Log - By Minute");
-dash::BarChart<const char *, float> barSwing(dashboard, "Swing Chart - By Minute");
+dash::TemperatureCard cardMinTemp(dashboard, "3hr Min Temp");
+dash::TemperatureCard cardMaxTemp(dashboard, "3hr Max Temp");
+dash::BarChart<const char *, float> barTemp(dashboard, "3hr Temp Log - By Minute");
+dash::BarChart<const char *, float> barSwing(dashboard, "3hr Swing Chart - By Minute");
 
-dash::SeparatorCard sep3(dashboard, "All Time");
-dash::BarChart<const char *, float> barTempAll(dashboard, "Temp Log - By Hour");
-dash::BarChart<const char *, float> barSwingAll(dashboard, "Swing Chart - By Hour");
+dash::SeparatorCard sep4(dashboard, "All Time");
+dash::TemperatureCard cardMinTempAll(dashboard, "All Time Min Temp");
+dash::TemperatureCard cardMaxTempAll(dashboard, "All Time Max Temp");
+dash::BarChart<const char *, float> barTempAll(dashboard, "All Temp Log - By Hour");
+dash::BarChart<const char *, float> barSwingAll(dashboard, "All Swing Chart - By Hour");
 
 /* --- Global Configuration --- */
 const int PING_DELAY = 1000;                                                    // How quickly the webpage updates in ms
 const int NUM_TEMP_SAMPLES = 6000;                                              // "Resolution" of your average temperature in ms (how many samples to take across TOT_TEMP_SAMPLE_RANGE)
 const unsigned int TOT_TEMP_SAMPLE_RANGE = 60000;                               // Each bar in the history temp chart will be the average temp across this many ms
 const int SINGLE_TEMP_SAMPLE_DELAY = TOT_TEMP_SAMPLE_RANGE / NUM_TEMP_SAMPLES;  // ^...equally spaced out readings that is
-const long MAX_POINTS = 180;                                                    // Max # of bars in barTemp chart before scrolling visual begins
+const long MAX_POINTS = 180;                                                    // Max # of bars in barTemp chart (fine-grain) before scrolling visual begins
 
 const long AVERAGES_PER_HOUR = 3600000/TOT_TEMP_SAMPLE_RANGE;                   // How many finished averages will there be in one hour (3,600,000 ms in an hour)
 const unsigned int TIMESPAN = 24 * 42;                                          // How many hours of data to show in the ALL charts (24 hours times 42 days) Beginning to run into RAM limits
@@ -62,7 +66,7 @@ float avgYAxisAll[TIMESPAN];
 
 /* --- Storage of Swing Temp Readings --- */
 char swingLabels[MAX_POINTS][12];
-const char *swingXAxis[MAX_POINTS];
+const char *swingXAxis[MAX_POINTS]; 
 float swingYAxis[MAX_POINTS];
 
 char swingLabelsAll[TIMESPAN][12];
@@ -87,6 +91,8 @@ int sampleCtr = 0;                        // The number of temperature samples t
 float runningT_sum = 0.0;                 // Sum of the ongoing average's temp readings so far
 long updateCtr = 0;                       // # of average readings have been calculated (when to begin scrolling the barTemp chart instead of appending)
 float currentT = 0.0;                     // Stores the latest calculated average
+float minTempAll = 999.0;                 // Lowest average temp measured
+float maxTempAll = -999.0;                // Highest average temp measured
 
 
 /* --- Temperature Calculation --- */
@@ -97,8 +103,12 @@ float CalcTemp(int Vo_val)
   float T_kelvin = (1.0 / (c1 + c2 * logR2 + c3 * logR2 * logR2 * logR2));
   float T_far = ((T_kelvin - 273.15) * 9.0 / 5.0) + 32.0;
 
-  // Custom linear curve calculated to match up to the Inkbird's output
-  T_far = ((T_far + 5.2399) / 1.1622);
+  // Custom curve calculated to match up to the Inkbird's output
+  // T_far = (-0.0000223 * T_far * T_far * T_far) + (0.00564 * T_far * T_far) + (0.392 * T_far) + 17.08; // White Blue V2 (inverse equation)
+
+  // T_far = (0.0000140 * T_far * T_far * T_far) - (0.00178 * T_far * T_far) + (0.871 * T_far) + 7.87;// Red Blue V2 (inverse equation)
+
+  T_far = (-0.00005946 * T_far * T_far * T_far) + (0.01472 * T_far * T_far) - (0.3119 * T_far) + 32.0; // Brown white V2 (inverse equation)
 
   return T_far;
 }
@@ -114,10 +124,39 @@ void AppendReading(dash::BarChart<const char *, float> &barChart, char labels[][
   barChart.setY(yAxis, updateCtr);
 }
 
-void ShiftReading(char labels[][12], const char *xAxis[], float yAxis[], int index){
+void ShiftReading(char labels[][12], const char *xAxis[], float yAxis[], int index)
+{
   strcpy(labels[index], labels[index+1]);
   yAxis[index] = yAxis[index+1];
   xAxis[index] = labels[index];
+}
+
+float FindMin(float temps[], const long size, long numReadings)
+{
+  long scanLimit = (numReadings > size) ? size : numReadings;
+  float min = temps[0];
+
+  for (int i = 0; i < scanLimit; i++)
+  {
+    if (temps[i] < min)
+      min = temps[i];
+  }
+
+  return min;
+}
+
+float FindMax(float temps[], const long size, long numReadings)
+{
+  long scanLimit = (numReadings > size) ? size : numReadings;
+  float max = temps[0];
+
+  for (int i = 0; i < scanLimit; i++)
+  {
+    if (temps[i] > max)
+      max = temps[i];
+  }
+
+  return max;
 }
 
 void setup()
@@ -142,8 +181,14 @@ void setup()
   if (!LittleFS.begin(true)){Serial.println("LittleFS Mount Failed");}
   else{Serial.println("LittleFS mounted");}
 
+  // Delete .csv file if DELETE_CSV flag is set & the file exists
+  if(DELETE_CSV && LittleFS.exists(FILENAME)){
+    if(LittleFS.remove(FILENAME)){Serial.print("CSV deleted: "); Serial.println(FILENAME);}
+    else{Serial.println("Delete failed");}
+  }
+
   // Init littleFS .csv file if not exists
-  if (!LittleFS.exists(FILENAME))
+  if (!LittleFS.exists(FILENAME) && WRITE_TO_CSV)
   {
     File file = LittleFS.open(FILENAME, "w");
     if (file)
@@ -154,10 +199,6 @@ void setup()
     }
   }
 
-  if(DELETE_CSV){
-    if(LittleFS.remove(FILENAME)){Serial.println("CSV deleted");}
-    else{Serial.println("Delete failed");}
-  }
 
   server.serveStatic(FILENAME, LittleFS, FILENAME); // Download .csv at http://beer.local/hourly.csv (or 192.168.1.95:8080/hourly.csv, depends on network)
 
@@ -195,6 +236,7 @@ void loop()
     // --- STEP 2: Process Average & Update Charts ---
     if (sampleCtr >= NUM_TEMP_SAMPLES)
     {
+      // Here's this run's average temp (fine-grain)
       currentT = runningT_sum / NUM_TEMP_SAMPLES;
 
       // Reset for next batch
@@ -202,11 +244,7 @@ void loop()
       sampleCtr = 0;
       updateCtr++;
 
-      // Update Cards
-      cardLiveTemperature.setValue(currentT);
-      cardLastAverageTemp.setValue(currentT);
-
-      // Update fine grain charts (Rolling Buffer Logic)
+      // Update fine-grain charts (Rolling Buffer Logic)
       if (updateCtr <= MAX_POINTS)
       {
         // Avg Chart fine grain
@@ -239,6 +277,24 @@ void loop()
         barSwing.setY(swingYAxis, MAX_POINTS);
       }
 
+      // Append to CSV (once per minute)
+      if (WRITE_TO_CSV)
+      {
+        File file = LittleFS.open(FILENAME, "a");
+        if (file)
+        {
+          file.print(updateCtr);
+          file.print(",");
+          file.println(currentT, 3); // 3 decimal places
+          file.close();
+          Serial.println("Logged minute temp to CSV");
+        }
+        else
+        {
+          Serial.println("Failed to open CSV for appending");
+        }
+      }
+
       // Update all-time temp charts (Only has rolling buffer logic. Stops updating once max is reached.)
       if ((updateCtr % AVERAGES_PER_HOUR) == 0 && (updateCtr / AVERAGES_PER_HOUR) < TIMESPAN)
       {
@@ -258,21 +314,6 @@ void loop()
         barTempAll.setX(avgXAxisAll, hoursElapsed);
         barTempAll.setY(avgYAxisAll, hoursElapsed);
 
-        // Append to CSV
-        if (WRITE_TO_CSV)
-        {
-          File file = LittleFS.open(FILENAME, "a");
-          if (file){
-            file.print(hoursElapsed);
-            file.print(",");
-            file.println(hourTempSum/AVERAGES_PER_HOUR, 3); // 3 decimal places
-            file.close();
-            Serial.println("Logged hourly temp to CSV");
-          }
-          else{
-            Serial.println("Failed to open CSV for appending");}
-        }
-
         // Swing Chart all-time
         ltoa(hoursElapsed, swingLabelsAll[index], 10);
         swingXAxisAll[index] = swingLabelsAll[index];
@@ -280,6 +321,18 @@ void loop()
         barSwingAll.setX(swingXAxisAll, hoursElapsed);
         barSwingAll.setY(swingYAxisAll, hoursElapsed);
       }
+
+      // Update Cards
+      cardLiveTemperature.setValue(currentT);
+      cardLastAverageTemp.setValue(currentT);
+      cardMinTemp.setValue(FindMin(avgYAxis, MAX_POINTS, updateCtr));
+      cardMaxTemp.setValue(FindMax(avgYAxis, MAX_POINTS, updateCtr));
+
+      if(currentT > maxTempAll){maxTempAll = currentT;}
+      if(currentT < minTempAll){minTempAll = currentT;}
+      cardMinTempAll.setValue(minTempAll);
+      cardMaxTempAll.setValue(maxTempAll);
+
       Serial.print("Avg Temp: ");
       Serial.println(currentT);
     }

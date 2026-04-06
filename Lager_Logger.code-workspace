@@ -1,0 +1,16 @@
+{
+	"folders": [
+		{
+			"path": "../Lager_Logger"
+		},
+		{
+			"name": "Rotary_Encoder_And_OLED_Boilerplate",
+			"path": "../Rotary_Encoder_And_OLED_Boilerplate"
+		},
+		{
+			"name": "ESP32_Lager_Logger",
+			"path": "."
+		}
+	],
+	"settings": {}
+}

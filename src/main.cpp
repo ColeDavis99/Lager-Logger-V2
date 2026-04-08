@@ -15,42 +15,26 @@ const char *password = "";
 AsyncWebServer server(80);
 ESPDashboardPlus dashboard("Lager Logger");
 
-/* --- Init minute history chart card --- */
-ChartCard *minute_history = dashboard.addChartCard(
-    "minute_history", // ID
-    "Temp by Minute", // Title
-    ChartType::AREA,  // Chart type
-    30                // Keep 30 data points
-);
-
-StatCard *countdown = dashboard.addStatCard(
-    "countdown",        // ID
-    "Minute Countdown", // Title
-    "59",               // Initial value
-    "s"                 // Unit
-);
-
-StatCard *liveTemp = dashboard.addStatCard(
-    "liveTemp",        // ID
-    "Live Temp", // Title
-    "0.0",               // Initial value
-    "F"                 // Unit
-);
-
 /* --- Global Configuration --- */
-const int PING_DELAY = 1000;                                                    // How quickly the webpage updates in ms
-const int NUM_TEMP_SAMPLES = 600;                                               // "Resolution" of your average temperature in ms (how many samples to take across TOT_TEMP_SAMPLE_RANGE)
-const unsigned int TOT_TEMP_SAMPLE_RANGE = 60000;                               // Each bar in the history temp chart will be the average temp across this many ms
-const int SINGLE_TEMP_SAMPLE_DELAY = TOT_TEMP_SAMPLE_RANGE / NUM_TEMP_SAMPLES;  // ^...equally spaced out readings that is
-const long MAX_POINTS = 180;                                                    // Max # of bars in barTemp chart (fine-grain) before scrolling visual begins
+const int PING_DELAY = 1000;                                                   // How quickly the webpage UI updates in ms
+const int NUM_TEMP_SAMPLES = 6000;                                             // "Resolution" of your average temperature in ms (how many samples to take across TOT_TEMP_SAMPLE_RANGE)
+const unsigned int TOT_TEMP_SAMPLE_RANGE = 60000;                              // Each bar in the history temp chart will be the average temp across this many ms
+const int SINGLE_TEMP_SAMPLE_DELAY = TOT_TEMP_SAMPLE_RANGE / NUM_TEMP_SAMPLES; // ^...equally spaced out readings that is
+const long MAX_POINTS = 3;                                                   // Max # of bars in "Resolution 2, fine-grain charts" before scrolling visual begins
 
-const long AVERAGES_PER_HOUR = 3600000/TOT_TEMP_SAMPLE_RANGE;                   // How many finished averages will there be in one hour (3,600,000 ms in an hour)
-const unsigned int TIMESPAN = 24 * 42;                                          // How many hours of data to show in the ALL charts (24 hours times 42 days) Beginning to run into RAM limits
+const long AVERAGES_PER_HOUR = 3600000 / TOT_TEMP_SAMPLE_RANGE;                // How many finished averages will there be in one hour (3,600,000 ms in an hour)
+const unsigned int TIMESPAN = 24 * 42;                                         // How many hours of data to show in the ALL charts (24 hours times 42 days) Beginning to run into RAM limits
 const bool WRITE_TO_CSV = true;                                                // Enable/disable .csv writes
 const bool DELETE_CSV = true;                                                  // Enable/disable deletion of the .csv file listed in FILENAME var
 const char *FILENAME = "/hourly.csv";
 
-/* --- Storage of Average Temp Readings --- */
+/* --- Init dashboard cards --- */
+StatCard *countdown = dashboard.addStatCard("countdown", "Minute Countdown", "59", "sec");
+StatCard *liveTemp = dashboard.addStatCard("liveTemp", "Live Temp", "0.0", "F");
+ChartCard *minuteHistory = dashboard.addChartCard("minuteHistory", "Temp by Minute", ChartType::BAR, MAX_POINTS);
+
+/*
+--- Storage of Average Temp Readings ---
 char avgLabels[MAX_POINTS][12];
 const char *avgXAxis[MAX_POINTS];
 float avgYAxis[MAX_POINTS];
@@ -59,7 +43,7 @@ char avgLabelsAll[TIMESPAN][12];
 const char *avgXAxisAll[TIMESPAN];
 float avgYAxisAll[TIMESPAN];
 
-/* --- Storage of Swing Temp Readings --- */
+--- Storage of Swing Temp Readings --- 
 char swingLabels[MAX_POINTS][12];
 const char *swingXAxis[MAX_POINTS]; 
 float swingYAxis[MAX_POINTS];
@@ -67,6 +51,7 @@ float swingYAxis[MAX_POINTS];
 char swingLabelsAll[TIMESPAN][12];
 const char *swingXAxisAll[TIMESPAN];
 float swingYAxisAll[TIMESPAN];
+*/
 
 /* --- Pin & Sensor Config --- */
 const int ThermistorPin = 34;
@@ -89,7 +74,6 @@ long updateCtr = 0;                       // # of average readings have been cal
 float currentT = 0.0;                     // Stores the latest calculated average
 float minTempAll = 999.0;                 // Lowest average temp measured
 float maxTempAll = -999.0;                // Highest average temp measured
-
 
 /* --- Temperature Calculation --- */
 float CalcTemp(int Vo_val)
@@ -151,24 +135,31 @@ void setup()
     // Disable OTA tab, enable Console tab
     dashboard.begin(&server, DASHBOARD_HTML_DATA, DASHBOARD_HTML_SIZE, false, true);
 
+    // Launch server
     server.begin();
 
-    // Apply UI theme to all cards
+    // Define UI look of the cards (grouping & whatnot)
     countdown->setVariant(CardVariant::PRIMARY);
+    countdown->setSize(1,1);
     liveTemp->setVariant(CardVariant::PRIMARY);
-    minute_history->setVariant(CardVariant::PRIMARY);
+    liveTemp->setSize(1,1);
+    minuteHistory->setVariant(CardVariant::PRIMARY);
+    // dashboard.addCardToGroup("TEST_GROUP", "minuteHistory");
+    minuteHistory->setSize(1, 2);
 }
 
 void loop()
 {   
     // OTA and UI heartbeats
-    ArduinoOTA.handle();
-    dashboard.loop();
+    ArduinoOTA.handle();        // Listen for OTA program upload event
+    dashboard.loop();           // Process WebSocket events
 
     // Main timing variable
     unsigned long currentMillis = millis();
 
-    // --- STEP 0: Non-Blocking Temp Sampling ---
+    //================================================================================================================================================
+    // --- STEP 0: Non-Blocking Temp Sampling ---       (Resolution 0, "fine-grain" timeframe. For high speed temp sampling.)
+    //================================================================================================================================================
     if (currentMillis - lastSampleTime >= SINGLE_TEMP_SAMPLE_DELAY)
     {
         int Vo = analogRead(ThermistorPin);
@@ -180,7 +171,10 @@ void loop()
         dtostrf(currentT, 0, 2, liveBuf);     // Convert float to string
         lastSampleTime = currentMillis;
 
-        // --- STEP 1: Frequent Dashboard Update For Countdown---
+
+        //================================================================================================================================================
+        // --- STEP 1: Frequent Dashboard Update ---        Resolution 1, "UI update" timeframe. One second is typically what I have it set to.)
+        //================================================================================================================================================
         if (currentMillis - lastPingTime >= PING_DELAY)
         {
             lastPingTime = millis();
@@ -190,12 +184,88 @@ void loop()
             char countBuf[12];               // Temporary buffer for this block
             itoa(secondsLeft, countBuf, 10); // Convert number to string
     
-            // Update the cards
+            // Update the "one second" cards
             dashboard.updateStatCard("liveTemp", liveBuf);
             dashboard.updateStatCard("countdown", countBuf);
     
             pingctr++;
-        }
-    }
 
-}
+
+            //================================================================================================================================================
+            // --- STEP 2: Process Average & Update Charts ---      (Resolution 2, "medium grain" timeframe. One minute is typically what I have it set to.)
+            //================================================================================================================================================
+            if (sampleCtr >= NUM_TEMP_SAMPLES){
+                // Here's this run's average temp (fine-grain)
+                currentT = runningT_sum / NUM_TEMP_SAMPLES;
+
+                // Reset/Increment for next batch
+                runningT_sum = 0;
+                sampleCtr = 0;
+                updateCtr++;
+
+                // Update the "one minute" cards
+                dashboard.updateChartCard("minuteHistory", currentT);
+
+                // Append to CSV (once per minute)
+                // if (WRITE_TO_CSV)
+                // {
+                //     File file = LittleFS.open(FILENAME, "a");
+                //     if (file)
+                //     {
+                //         file.print(updateCtr);
+                //         file.print(",");
+                //         file.println(currentT, 3); // 3 decimal places
+                //         file.close();
+                //         Serial.println("Logged minute temp to CSV");
+                //     }
+                //     else{Serial.println("Failed to open CSV for appending");}
+                // }
+
+
+/*
+                // Update the "all time" cards
+                if ((updateCtr % AVERAGES_PER_HOUR) == 0 && (updateCtr / AVERAGES_PER_HOUR) < TIMESPAN)
+                {
+                    // Avg Chart all-time
+                    int hoursElapsed = updateCtr / AVERAGES_PER_HOUR;
+                    int index = hoursElapsed - 1;
+                    ltoa(hoursElapsed, avgLabelsAll[index], 10);
+                    avgXAxisAll[index] = avgLabelsAll[index];
+                    
+                    // Calculate the hourly average
+                    float hourTempSum = 0.0;
+                    if(updateCtr > MAX_POINTS){
+                    for(int i=MAX_POINTS-1; i>=MAX_POINTS-AVERAGES_PER_HOUR; i--){hourTempSum += avgYAxis[i];}}
+                    else{
+                    for (int i=((updateCtr-1) % MAX_POINTS); i>((updateCtr - 1) % MAX_POINTS)-AVERAGES_PER_HOUR; i--){hourTempSum += avgYAxis[i];}}
+                    avgYAxisAll[index] = hourTempSum/AVERAGES_PER_HOUR;
+                    barTempAll.setX(avgXAxisAll, hoursElapsed);
+                    barTempAll.setY(avgYAxisAll, hoursElapsed);
+
+                    // Swing Chart all-time
+                    ltoa(hoursElapsed, swingLabelsAll[index], 10);
+                    swingXAxisAll[index] = swingLabelsAll[index];
+                    swingYAxisAll[index] = avgYAxisAll[index] - avgYAxisAll[index - (hoursElapsed > 1)]; // Can't have a swing temp with only 1 reading.
+                    barSwingAll.setX(swingXAxisAll, hoursElapsed);
+                    barSwingAll.setY(swingYAxisAll, hoursElapsed);
+                }
+*/
+
+/*
+
+                // Update Cards
+                cardLiveTemperature.setValue(currentT);
+                cardLastAverageTemp.setValue(currentT);
+                cardMinTemp.setValue(FindMin(avgYAxis, MAX_POINTS, updateCtr));
+                cardMaxTemp.setValue(FindMax(avgYAxis, MAX_POINTS, updateCtr));
+
+                if(currentT > maxTempAll){maxTempAll = currentT;}
+                if(currentT < minTempAll){minTempAll = currentT;}
+                cardMinTempAll.setValue(minTempAll);
+                cardMaxTempAll.setValue(maxTempAll);
+*/
+
+            }// End step 2
+        }// End step 1
+    }// End step 0
+}// End loop()

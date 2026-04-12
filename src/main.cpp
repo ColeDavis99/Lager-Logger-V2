@@ -20,18 +20,19 @@ const int PING_DELAY = 1000;                                                   /
 const int NUM_TEMP_SAMPLES = 6000;                                             // "Resolution" of your average temperature in ms (how many samples to take across TOT_TEMP_SAMPLE_RANGE)
 const unsigned int TOT_TEMP_SAMPLE_RANGE = 60000;                              // Each bar in the history temp chart will be the average temp across this many ms
 const int SINGLE_TEMP_SAMPLE_DELAY = TOT_TEMP_SAMPLE_RANGE / NUM_TEMP_SAMPLES; // ^...equally spaced out readings that is
-const long MAX_POINTS = 3;                                                   // Max # of bars in "Resolution 2, fine-grain charts" before scrolling visual begins
+const long MAX_POINTS = 10080;                                                 // Max # of bars in "Resolution 2, fine-grain charts" before scrolling visual begins
 
 const long AVERAGES_PER_HOUR = 3600000 / TOT_TEMP_SAMPLE_RANGE;                // How many finished averages will there be in one hour (3,600,000 ms in an hour)
 const unsigned int TIMESPAN = 24 * 42;                                         // How many hours of data to show in the ALL charts (24 hours times 42 days) Beginning to run into RAM limits
-const bool WRITE_TO_CSV = true;                                                // Enable/disable .csv writes
+const bool WRITE_TO_CSV = false;                                                // Enable/disable .csv writes
 const bool DELETE_CSV = true;                                                  // Enable/disable deletion of the .csv file listed in FILENAME var
 const char *FILENAME = "/hourly.csv";
 
 /* --- Init dashboard cards --- */
 StatCard *countdown = dashboard.addStatCard("countdown", "Minute Countdown", "59", "sec");
 StatCard *liveTemp = dashboard.addStatCard("liveTemp", "Live Temp", "0.0", "F");
-ChartCard *minuteHistory = dashboard.addChartCard("minuteHistory", "Temp by Minute", ChartType::BAR, MAX_POINTS);
+StatCard *lastAverage = dashboard.addStatCard("lastAverage", "Last Average", "0.0", "F");
+ChartCard *minuteHistory = dashboard.addChartCard("minuteHistory", "7 Day Temp Log - By Minute", ChartType::BAR, MAX_POINTS);
 
 /*
 --- Storage of Average Temp Readings ---
@@ -146,6 +147,8 @@ void setup()
     minuteHistory->setVariant(CardVariant::PRIMARY);
     // dashboard.addCardToGroup("TEST_GROUP", "minuteHistory");
     minuteHistory->setSize(1, 2);
+    lastAverage->setVariant(CardVariant::PRIMARY);
+    lastAverage->setSize(1,1);
 }
 
 void loop()
@@ -203,8 +206,13 @@ void loop()
                 sampleCtr = 0;
                 updateCtr++;
 
+                
                 // Update the "one minute" cards
                 dashboard.updateChartCard("minuteHistory", currentT);
+                
+                char avgBuf[12];  // Temporary buffer for this block
+                snprintf(avgBuf, sizeof(avgBuf), "%.2f", currentT);
+                dashboard.updateStatCard("lastAverage", avgBuf);
 
                 // Append to CSV (once per minute)
                 // if (WRITE_TO_CSV)
